@@ -19,6 +19,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
 
+
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
@@ -77,49 +78,51 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 
 void ParseCommand(char *cmd)
 {
-    // Trim trailing \r or \n if present
+    // Trim CR, LF, or garbage past buffer
     for (int i = 0; i < RX_BUFFER_SIZE; i++) {
-        if (cmd[i] == '\r' || cmd[i] == '\n') {
+        if (cmd[i] == '\r' || cmd[i] == '\n' || cmd[i] == '\0') {
             cmd[i] = '\0';
             break;
         }
     }
 
+    // Truncate at the first closing '}'
+    char *end = strchr(cmd, '}');
+    if (end != NULL) {
+        *(end + 1) = '\0';  // Include the closing brace
+    }
+
     HAL_UART_Transmit(&huart3, (uint8_t*)"Parsing...\r\n", 13, HAL_MAX_DELAY);
 
-    if (strncmp(cmd, "{LED:", 5) != 0) {
-        HAL_UART_Transmit(&huart3, (uint8_t*)"Missing prefix\r\n", 16, HAL_MAX_DELAY);
+    // Validate structure
+    if (strncmp(cmd, "{LED:", 5) != 0 ||
+        cmd[7] != ',' ||
+        strncmp(&cmd[8], "STATE:", 6) != 0 ||
+        cmd[16] != '}') {
+        HAL_UART_Transmit(&huart3, (uint8_t*)"Invalid format\r\n", 17, HAL_MAX_DELAY);
         return;
     }
 
-    if (cmd[7] != ',' || strncmp(&cmd[8], "STATE:", 6) != 0) {
-        HAL_UART_Transmit(&huart3, (uint8_t*)"Bad syntax\r\n", 13, HAL_MAX_DELAY);
-        return;
-    }
-
-    if (cmd[16] != '}') {
-        HAL_UART_Transmit(&huart3, (uint8_t*)"Missing closing }\r\n", 20, HAL_MAX_DELAY);
-        return;
-    }
-
+    // Extract LED ID and state
     char led_id[3] = { cmd[5], cmd[6], '\0' };
-    char state[3] = { cmd[14], cmd[15], '\0' };
+    char state[3]  = { cmd[14], cmd[15], '\0' };
 
     GPIO_PinState pin_state = (strcmp(state, "ON") == 0) ? GPIO_PIN_SET : GPIO_PIN_RESET;
 
     if (strcmp(led_id, "01") == 0) {
-        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, pin_state); // Green LED
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, pin_state);   // LD1 Green
         HAL_UART_Transmit(&huart3, (uint8_t*)"Green toggled\r\n", 16, HAL_MAX_DELAY);
     } else if (strcmp(led_id, "02") == 0) {
-        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_7, pin_state); // Blue LED
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_7, pin_state);   // LD2 Blue
         HAL_UART_Transmit(&huart3, (uint8_t*)"Blue toggled\r\n", 15, HAL_MAX_DELAY);
     } else if (strcmp(led_id, "03") == 0) {
-        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, pin_state); // Red LED
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, pin_state);  // LD3 Red
         HAL_UART_Transmit(&huart3, (uint8_t*)"Red toggled\r\n", 14, HAL_MAX_DELAY);
     } else {
         HAL_UART_Transmit(&huart3, (uint8_t*)"Unknown LED ID\r\n", 17, HAL_MAX_DELAY);
     }
 }
+
 
 
 /* USER CODE END 0 */
@@ -153,6 +156,20 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+
+  HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_0);   // LD1
+  HAL_Delay(1000);
+  HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_7);   // LD2
+  HAL_Delay(1000);
+  HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_14);  // LD3
+  HAL_Delay(1000);
+  HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_0);   // LD1
+	HAL_Delay(1000);
+	HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_7);   // LD2
+	HAL_Delay(1000);
+	HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_14);  // LD3
+	HAL_Delay(1000);
+
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
   char *startup_msg = "STM32 Ready. Send LED commands...\r\n";
@@ -283,6 +300,7 @@ static void MX_GPIO_Init(void)
 
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOD_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
   GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_7|GPIO_PIN_14; // Change to your actual LED pins
