@@ -45,8 +45,11 @@
 UART_HandleTypeDef huart3;
 
 /* USER CODE BEGIN PV */
-uint8_t uart_rx_buffer[RX_BUFFER_SIZE];
-char command_buffer[RX_BUFFER_SIZE];
+#define CMD_MAX_LENGTH 32
+
+uint8_t uart_byte;
+char command_buffer[CMD_MAX_LENGTH];
+uint8_t command_index = 0;
 volatile uint8_t command_ready = 0;
 /* USER CODE END PV */
 
@@ -63,17 +66,26 @@ void ParseCommand(char *cmd);
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
   if (huart->Instance == USART3) {
-    memcpy(command_buffer, uart_rx_buffer, RX_BUFFER_SIZE);
+    if (uart_byte == '}') {
+      if (command_index < CMD_MAX_LENGTH - 1) {
+        command_buffer[command_index++] = uart_byte;
+      }
+      command_buffer[command_index] = '\0';  // Null-terminate
+      command_ready = 1;
+      command_index = 0;
+    } else {
+      if (command_index < CMD_MAX_LENGTH - 1) {
+        command_buffer[command_index++] = uart_byte;
+      } else {
+        command_index = 0;  // Reset on overflow
+      }
+    }
 
-    // Echo back what was received (for debugging)
-    HAL_UART_Transmit(&huart3, (uint8_t*)"RX Raw: ", 8, HAL_MAX_DELAY);
-    HAL_UART_Transmit(&huart3, (uint8_t*)command_buffer, RX_BUFFER_SIZE, HAL_MAX_DELAY);
-    HAL_UART_Transmit(&huart3, (uint8_t*)"\r\n", 2, HAL_MAX_DELAY);
-
-    command_ready = 1;
-    HAL_UART_Receive_IT(&huart3, uart_rx_buffer, RX_BUFFER_SIZE);
+    // Continue receiving next byte
+    HAL_UART_Receive_IT(&huart3, &uart_byte, 1);
   }
 }
+
 
 
 void ParseCommand(char *cmd)
@@ -174,7 +186,7 @@ int main(void)
   /* USER CODE BEGIN 2 */
   char *startup_msg = "STM32 Ready. Send LED commands...\r\n";
   HAL_UART_Transmit(&huart3, (uint8_t*)startup_msg, strlen(startup_msg), HAL_MAX_DELAY);
-  HAL_UART_Receive_IT(&huart3, uart_rx_buffer, RX_BUFFER_SIZE);
+  HAL_UART_Receive_IT(&huart3, &uart_byte, 1);
   /* USER CODE END 2 */
 
   /* Infinite loop */
