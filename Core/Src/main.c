@@ -90,50 +90,54 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 
 void ParseCommand(char *cmd)
 {
-    // Trim CR, LF, or garbage past buffer
-    for (int i = 0; i < RX_BUFFER_SIZE; i++) {
-        if (cmd[i] == '\r' || cmd[i] == '\n' || cmd[i] == '\0') {
-            cmd[i] = '\0';
-            break;
-        }
-    }
-
-    // Truncate at the first closing '}'
-    char *end = strchr(cmd, '}');
-    if (end != NULL) {
-        *(end + 1) = '\0';  // Include the closing brace
-    }
-
     HAL_UART_Transmit(&huart3, (uint8_t*)"Parsing...\r\n", 13, HAL_MAX_DELAY);
 
-    // Validate structure
-    if (strncmp(cmd, "{LED:", 5) != 0 ||
-        cmd[7] != ',' ||
-        strncmp(&cmd[8], "STATE:", 6) != 0 ||
-        cmd[16] != '}') {
-        HAL_UART_Transmit(&huart3, (uint8_t*)"Invalid format\r\n", 17, HAL_MAX_DELAY);
+    // Find end of message
+    char *end = strchr(cmd, '}');
+    if (!end) {
+        HAL_UART_Transmit(&huart3, (uint8_t*)"Missing closing }\r\n", 20, HAL_MAX_DELAY);
+        return;
+    }
+    *(end + 1) = '\0';  // Terminate after the first }
+
+    // Basic validation
+    if (strncmp(cmd, "{LED:", 5) != 0 || strncmp(&cmd[8], "STATE:", 6) != 0) {
+        HAL_UART_Transmit(&huart3, (uint8_t*)"Bad format\r\n", 13, HAL_MAX_DELAY);
         return;
     }
 
-    // Extract LED ID and state
+    // Extract ID
     char led_id[3] = { cmd[5], cmd[6], '\0' };
-    char state[3]  = { cmd[14], cmd[15], '\0' };
 
-    GPIO_PinState pin_state = (strcmp(state, "ON") == 0) ? GPIO_PIN_SET : GPIO_PIN_RESET;
+    // Extract ON/OFF
+    char state[4] = {0};
+    int state_len = end - &cmd[14];  // How many chars between STATE: and }
+
+    strncpy(state, &cmd[14], state_len);
+    state[state_len] = '\0';
+
+    GPIO_PinState pin_state = (strcmp(state, "ON") == 0) ? GPIO_PIN_SET :
+                              (strcmp(state, "OFF") == 0) ? GPIO_PIN_RESET : 255;
+
+    if (pin_state == 255) {
+        HAL_UART_Transmit(&huart3, (uint8_t*)"Unknown state\r\n", 16, HAL_MAX_DELAY);
+        return;
+    }
 
     if (strcmp(led_id, "01") == 0) {
-        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, pin_state);   // LD1 Green
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, pin_state);
         HAL_UART_Transmit(&huart3, (uint8_t*)"Green toggled\r\n", 16, HAL_MAX_DELAY);
     } else if (strcmp(led_id, "02") == 0) {
-        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_7, pin_state);   // LD2 Blue
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_7, pin_state);
         HAL_UART_Transmit(&huart3, (uint8_t*)"Blue toggled\r\n", 15, HAL_MAX_DELAY);
     } else if (strcmp(led_id, "03") == 0) {
-        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, pin_state);  // LD3 Red
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, pin_state);
         HAL_UART_Transmit(&huart3, (uint8_t*)"Red toggled\r\n", 14, HAL_MAX_DELAY);
     } else {
-        HAL_UART_Transmit(&huart3, (uint8_t*)"Unknown LED ID\r\n", 17, HAL_MAX_DELAY);
+        HAL_UART_Transmit(&huart3, (uint8_t*)"Unknown LED\r\n", 14, HAL_MAX_DELAY);
     }
 }
+
 
 
 
